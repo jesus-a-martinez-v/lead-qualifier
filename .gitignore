@@ -1,0 +1,11 @@
+node_modules
+.trigger
+.next
+next-env.d.ts
+.claude
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+dist

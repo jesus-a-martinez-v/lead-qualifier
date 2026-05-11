@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "trigger": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["trigger.dev@latest", "mcp", "--project-ref", "proj_yaxtvgmpfxzadpthznyb"],
+      "env": {}
+    }
+  }
+}

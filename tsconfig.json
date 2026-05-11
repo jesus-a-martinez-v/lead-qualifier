@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["dom", "dom.iterable", "ES2022"],
+    "jsx": "preserve",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowJs": true,
+    "incremental": true,
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    ".next/types/**/*.ts",
+    "trigger.config.ts"
+  ],
+  "exclude": ["node_modules", ".trigger", ".next"]
+}

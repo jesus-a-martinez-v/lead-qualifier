@@ -1,0 +1,37 @@
+{
+  "name": "lead-qualifier",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "dev:trigger": "trigger.dev dev",
+    "deploy:trigger": "trigger.dev deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@trigger.dev/react-hooks": "^4.4.5",
+    "@trigger.dev/sdk": "^4.4.5",
+    "next": "^16.2.6",
+    "openai": "^4.77.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
+    "@trigger.dev/build": "^4.4.5",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.6",
+    "postcss": "^8.5.14",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.5.0"
+  }
+}
