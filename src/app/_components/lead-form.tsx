@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { qualifyAction, type QualifyHandle } from "../actions/qualify";
 import { LeadInputSchema, type LeadInput } from "@/types/lead";
@@ -43,12 +44,20 @@ function toLeadInput(s: FormState): LeadInput {
   return out;
 }
 
-export function LeadForm() {
+type LeadFormProps = {
+  isPro: boolean;
+  usedToday: number;
+  dailyLimit: number;
+};
+
+export function LeadForm({ isPro, usedToday, dailyLimit }: LeadFormProps) {
   const [state, setState] = useState<FormState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
+  const [limitReached, setLimitReached] = useState(!isPro && usedToday >= dailyLimit);
   const [handle, setHandle] = useState<QualifyHandle | null>(null);
   const [pending, startTransition] = useTransition();
   const resultRef = useRef<HTMLDivElement>(null);
+  const disabled = pending || limitReached;
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setState((prev) => ({ ...prev, [key]: value }));
@@ -74,6 +83,7 @@ export function LeadForm() {
       const res = await qualifyAction(parsed.data);
       if (!res.ok) {
         setError(res.error);
+        if (res.code === "LIMIT_REACHED") setLimitReached(true);
         return;
       }
       setHandle(res.handle);
@@ -202,11 +212,14 @@ export function LeadForm() {
         </div>
 
         <div className="mt-16 flex flex-col items-start gap-6 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-md text-sm leading-relaxed text-[color:var(--muted)]">
-            Analysis runs against the BANT rubric using an LLM. Results stream
-            back live — no refresh needed.
-          </p>
-          <button type="submit" className="cta" disabled={pending}>
+          <div className="flex max-w-md flex-col gap-3">
+            <p className="text-sm leading-relaxed text-[color:var(--muted)]">
+              Analysis runs against the BANT rubric using an LLM. Results stream
+              back live — no refresh needed.
+            </p>
+            <UsageChip isPro={isPro} usedToday={usedToday} dailyLimit={dailyLimit} />
+          </div>
+          <button type="submit" className="cta" disabled={disabled}>
             {pending ? "Sending…" : "Analyze"}
             <span className="cta__arrow" aria-hidden>
               →
@@ -214,7 +227,21 @@ export function LeadForm() {
           </button>
         </div>
 
-        {error && (
+        {limitReached && (
+          <p className="mt-6 border-l-2 border-[color:var(--ember)] pl-4 text-sm">
+            <span className="text-[color:var(--ember)]">
+              Daily free limit reached ({Math.max(usedToday, dailyLimit)}/{dailyLimit}).
+            </span>{" "}
+            <Link
+              href="/billing"
+              className="font-medium underline underline-offset-4 hover:text-[color:var(--ember)]"
+            >
+              Upgrade to Pro for unlimited →
+            </Link>
+          </p>
+        )}
+
+        {error && !limitReached && (
           <p className="mt-6 border-l-2 border-[color:var(--ember)] pl-4 text-sm text-[color:var(--ember)]">
             {error}
           </p>
@@ -231,6 +258,32 @@ export function LeadForm() {
         )}
       </div>
     </>
+  );
+}
+
+function UsageChip({
+  isPro,
+  usedToday,
+  dailyLimit,
+}: {
+  isPro: boolean;
+  usedToday: number;
+  dailyLimit: number;
+}) {
+  if (isPro) {
+    return (
+      <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[color:var(--rule)] px-3 py-1 text-xs uppercase tracking-wider text-[color:var(--muted)]">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Pro · unlimited
+      </span>
+    );
+  }
+  const remaining = Math.max(dailyLimit - usedToday, 0);
+  return (
+    <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[color:var(--rule)] px-3 py-1 text-xs uppercase tracking-wider text-[color:var(--muted)]">
+      <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--muted)]" />
+      Free · {remaining}/{dailyLimit} left today
+    </span>
   );
 }
 

@@ -3,6 +3,8 @@
 import { auth, tasks } from "@trigger.dev/sdk/v3";
 import { LeadInputSchema, type LeadInput } from "@/types/lead";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getBillingState, getCompletedTodayUTC } from "@/lib/billing/state";
+import { FREE_DAILY_LIMIT } from "@/lib/billing/plans";
 
 export type QualifyHandle = {
   runId: string;
@@ -11,7 +13,7 @@ export type QualifyHandle = {
 
 export type QualifyResponse =
   | { ok: true; handle: QualifyHandle }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: "LIMIT_REACHED" };
 
 export async function qualifyAction(input: LeadInput): Promise<QualifyResponse> {
   const parsed = LeadInputSchema.safeParse(input);
@@ -40,6 +42,18 @@ export async function qualifyAction(input: LeadInput): Promise<QualifyResponse> 
     return { ok: false, error: "You must be signed in to qualify a lead." };
   }
 
+  const { isPro } = await getBillingState(supabase, user.id);
+  if (!isPro) {
+    const used = await getCompletedTodayUTC(supabase, user.id);
+    if (used >= FREE_DAILY_LIMIT) {
+      return {
+        ok: false,
+        code: "LIMIT_REACHED",
+        error: `Daily free limit reached (${used}/${FREE_DAILY_LIMIT}). Upgrade to Pro for unlimited qualifications.`,
+      };
+    }
+  }
+
   const { data: row, error: insertError } = await supabase
     .from("qualifications")
     .insert({
@@ -64,10 +78,13 @@ export async function qualifyAction(input: LeadInput): Promise<QualifyResponse> 
       userId: user.id,
     });
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("qualifications")
       .update({ run_id: handle.id })
       .eq("id", row.id);
+    if (updateError) {
+      return { ok: false, error: updateError.message };
+    }
 
     const publicAccessToken = await auth.createPublicToken({
       scopes: { read: { runs: [handle.id] } },
@@ -76,10 +93,13 @@ export async function qualifyAction(input: LeadInput): Promise<QualifyResponse> 
     return { ok: true, handle: { runId: handle.id, publicAccessToken } };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
-    await supabase
+    const { error: updateError } = await supabase
       .from("qualifications")
       .update({ status: "failed", error })
       .eq("id", row.id);
-    return { ok: false, error };
+    return {
+      ok: false,
+      error: updateError ? `${error}; failed to update qualification: ${updateError.message}` : error,
+    };
   }
 }

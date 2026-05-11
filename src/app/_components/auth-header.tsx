@@ -25,6 +25,12 @@ export async function AuthHeader() {
           >
             History
           </Link>
+          <Link
+            href="/billing"
+            className="text-[color:var(--muted)] underline-offset-4 hover:text-[color:var(--ink)] hover:underline"
+          >
+            Billing
+          </Link>
         </nav>
         <div className="flex items-center gap-4">
           <span className="hidden text-[color:var(--muted)] sm:inline">

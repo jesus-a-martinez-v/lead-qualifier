@@ -139,16 +139,19 @@ function stripJsonFence(s: string): string {
 
 async function finalize(
   qualificationId: string | undefined,
+  userId: string | undefined,
+  runId: string,
   patch:
     | { status: "completed"; result: QualificationResult }
     | { status: "failed"; error: string },
 ): Promise<void> {
-  if (!qualificationId) return;
+  if (!qualificationId || !userId) return;
   try {
     const { error } = await supabaseAdmin()
       .from("qualifications")
-      .update(patch)
-      .eq("id", qualificationId);
+      .update({ ...patch, run_id: runId })
+      .eq("id", qualificationId)
+      .eq("user_id", userId);
     if (error) logger.error("supabase update failed", { qualificationId, error: error.message });
   } catch (e) {
     logger.error("supabase update threw", { qualificationId, error: errMessage(e) });
@@ -213,7 +216,7 @@ export const qualifyLeadTask = task({
     } catch (e) {
       const error = errMessage(e);
       logger.error("llm call failed", { runId, error });
-      await finalize(qualificationId, { status: "failed", error });
+      await finalize(qualificationId, userId, runId, { status: "failed", error });
       return { status: "error", runId, stage: "llm", error };
     }
 
@@ -225,14 +228,14 @@ export const qualifyLeadTask = task({
     } catch (e) {
       const error = `LLM returned non-JSON: ${errMessage(e)}`;
       logger.error("parse failed", { runId, error, rawJson: rawJson.slice(0, 500) });
-      await finalize(qualificationId, { status: "failed", error });
+      await finalize(qualificationId, userId, runId, { status: "failed", error });
       return { status: "error", runId, stage: "parse", error };
     }
 
     const validated = parseQualificationResult(parsedJson);
     if (!validated.ok) {
       logger.error("schema mismatch", { runId, error: validated.error });
-      await finalize(qualificationId, { status: "failed", error: validated.error });
+      await finalize(qualificationId, userId, runId, { status: "failed", error: validated.error });
       return { status: "error", runId, stage: "parse", error: validated.error };
     }
 
@@ -244,7 +247,7 @@ export const qualifyLeadTask = task({
       score: validated.value.overall_score,
     });
 
-    await finalize(qualificationId, { status: "completed", result: validated.value });
+    await finalize(qualificationId, userId, runId, { status: "completed", result: validated.value });
 
     return { status: "ok", runId, result: validated.value };
   },

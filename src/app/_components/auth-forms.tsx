@@ -4,13 +4,14 @@ import { useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { safeRedirectPath } from "@/lib/redirect";
 
 type Mode = "login" | "signup";
 
 export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
   const params = useSearchParams();
-  const redirectTo = params.get("redirectTo") ?? "/";
+  const redirectTo = safeRedirectPath(params.get("redirectTo"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

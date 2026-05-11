@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/auth/callback"];
+const PUBLIC_PATHS = ["/login", "/signup", "/auth/callback", "/api/stripe/webhook"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
   if (!user && !isPublic) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
-    redirectUrl.searchParams.set("redirectTo", pathname);
+    redirectUrl.searchParams.set("redirectTo", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(redirectUrl);
   }
 
