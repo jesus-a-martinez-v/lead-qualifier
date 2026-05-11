@@ -19,6 +19,13 @@ export const LeadInputSchema = z
 
 export type LeadInput = z.infer<typeof LeadInputSchema>;
 
+export const QualifyTaskPayloadSchema = LeadInputSchema.extend({
+  qualificationId: z.string().uuid(),
+  userId: z.string().uuid(),
+});
+
+export type QualifyTaskPayload = z.infer<typeof QualifyTaskPayloadSchema>;
+
 const ScoreSchema = z.object({
   score: z.number().int().min(0).max(5),
   reasoning: z.string().min(1),

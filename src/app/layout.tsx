@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Instrument_Serif, Geist } from "next/font/google";
 import "./globals.css";
+import { AuthHeader } from "./_components/auth-header";
 
 const instrumentSerif = Instrument_Serif({
   weight: "400",
@@ -29,7 +30,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${instrumentSerif.variable} ${geist.variable}`}>
-      <body>{children}</body>
+      <body>
+        <AuthHeader />
+        {children}
+      </body>
     </html>
   );
 }

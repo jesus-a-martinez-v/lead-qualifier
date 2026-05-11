@@ -1,7 +1,11 @@
 import { defineConfig } from "@trigger.dev/sdk/v3";
 import { syncEnvVars } from "@trigger.dev/build/extensions/core";
 
-const SYNCED_VARS = ["OPENROUTER_API_KEY"] as const;
+const SYNCED_VARS = [
+  "OPENROUTER_API_KEY",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+] as const;
 
 export default defineConfig({
   project: "proj_yaxtvgmpfxzadpthznyb",

@@ -1,9 +1,10 @@
 import { logger, metadata, task } from "@trigger.dev/sdk/v3";
 import { DEFAULT_MODEL, openrouter } from "../lib/openrouter.js";
+import { supabaseAdmin } from "../lib/supabase/admin.js";
 import {
   type LeadInput,
   type QualificationResult,
-  parseLeadInput,
+  QualifyTaskPayloadSchema,
   parseQualificationResult,
 } from "../types/lead.js";
 
@@ -136,6 +137,24 @@ function stripJsonFence(s: string): string {
   return fence ? fence[1].trim() : trimmed;
 }
 
+async function finalize(
+  qualificationId: string | undefined,
+  patch:
+    | { status: "completed"; result: QualificationResult }
+    | { status: "failed"; error: string },
+): Promise<void> {
+  if (!qualificationId) return;
+  try {
+    const { error } = await supabaseAdmin()
+      .from("qualifications")
+      .update(patch)
+      .eq("id", qualificationId);
+    if (error) logger.error("supabase update failed", { qualificationId, error: error.message });
+  } catch (e) {
+    logger.error("supabase update threw", { qualificationId, error: errMessage(e) });
+  }
+}
+
 export const qualifyLeadTask = task({
   id: "qualify-lead",
   retry: { maxAttempts: 3 },
@@ -144,13 +163,23 @@ export const qualifyLeadTask = task({
     const runId = ctx.run.id;
     metadata.set("status", "validating");
 
-    const parsed = parseLeadInput(raw);
-    if (!parsed.ok) {
-      logger.error("validate failed", { runId, error: parsed.error });
-      return { status: "error", runId, stage: "validate", error: parsed.error };
+    const parsed = QualifyTaskPayloadSchema.safeParse(raw);
+    if (!parsed.success) {
+      const error = parsed.error.issues
+        .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
+        .join("; ");
+      logger.error("validate failed", { runId, error });
+      // No qualificationId available — caller (server action) marks the row failed.
+      return { status: "error", runId, stage: "validate", error };
     }
-    const lead = parsed.value;
-    logger.log("lead parsed", { runId, email: lead.email, company: lead.company });
+    const { qualificationId, userId, ...lead } = parsed.data;
+    logger.log("lead parsed", {
+      runId,
+      qualificationId,
+      userId,
+      email: lead.email,
+      company: lead.company,
+    });
 
     const model = lead.model ?? DEFAULT_MODEL;
     metadata.set("status", "calling_llm");
@@ -184,6 +213,7 @@ export const qualifyLeadTask = task({
     } catch (e) {
       const error = errMessage(e);
       logger.error("llm call failed", { runId, error });
+      await finalize(qualificationId, { status: "failed", error });
       return { status: "error", runId, stage: "llm", error };
     }
 
@@ -195,12 +225,14 @@ export const qualifyLeadTask = task({
     } catch (e) {
       const error = `LLM returned non-JSON: ${errMessage(e)}`;
       logger.error("parse failed", { runId, error, rawJson: rawJson.slice(0, 500) });
+      await finalize(qualificationId, { status: "failed", error });
       return { status: "error", runId, stage: "parse", error };
     }
 
     const validated = parseQualificationResult(parsedJson);
     if (!validated.ok) {
       logger.error("schema mismatch", { runId, error: validated.error });
+      await finalize(qualificationId, { status: "failed", error: validated.error });
       return { status: "error", runId, stage: "parse", error: validated.error };
     }
 
@@ -211,6 +243,8 @@ export const qualifyLeadTask = task({
       action: validated.value.recommended_action,
       score: validated.value.overall_score,
     });
+
+    await finalize(qualificationId, { status: "completed", result: validated.value });
 
     return { status: "ok", runId, result: validated.value };
   },
