@@ -35,6 +35,7 @@
     "src/**/*.tsx",
     ".next/types/**/*.ts",
     "trigger.config.ts",
+    "drizzle.config.ts",
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
