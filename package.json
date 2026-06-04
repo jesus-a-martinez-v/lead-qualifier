@@ -10,13 +10,19 @@
     "lint": "next lint",
     "dev:trigger": "trigger.dev dev",
     "deploy:trigger": "trigger.dev deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@neondatabase/serverless": "1.1.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
     "@trigger.dev/react-hooks": "^4.4.5",
     "@trigger.dev/sdk": "^4.4.5",
+    "drizzle-orm": "0.45.2",
     "next": "^16.2.6",
     "openai": "^4.77.0",
     "react": "^19.2.6",
@@ -31,11 +37,13 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.5.0",
+    "drizzle-kit": "0.31.10",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.6",
     "postcss": "8.5.14",
     "supabase": "^2.98.2",
     "tailwindcss": "^4.3.0",
+    "tsx": "4.22.4",
     "typescript": "^5.5.0"
   },
   "overrides": {
