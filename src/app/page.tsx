@@ -1,20 +1,17 @@
 import { LeadForm } from "./_components/lead-form";
-import { supabaseServer } from "@/lib/supabase/server";
+import { auth } from "@/auth";
 import { getBillingState, getCompletedTodayUTC } from "@/lib/billing/state";
 import { FREE_DAILY_LIMIT } from "@/lib/billing/plans";
 
 export default async function HomePage() {
-  const supabase = await supabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await auth();
 
   let isPro = false;
   let used = 0;
-  if (user) {
+  if (session?.user?.id) {
     const [billing, today] = await Promise.all([
-      getBillingState(supabase, user.id),
-      getCompletedTodayUTC(supabase, user.id),
+      getBillingState(session.user.id),
+      getCompletedTodayUTC(session.user.id),
     ]);
     isPro = billing.isPro;
     used = today;

@@ -1,12 +1,18 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { and, count, desc, eq, gte } from "drizzle-orm";
+import { db } from "@/lib/db";
+import {
+  qualifications,
+  stripeCustomers,
+  subscriptions,
+} from "@/lib/db/schema";
 import { ACTIVE_STATUSES } from "@/lib/stripe";
 
 export type SubscriptionRow = {
   id: string;
   status: string;
-  price_id: string;
-  current_period_end: string;
-  cancel_at_period_end: boolean;
+  priceId: string;
+  currentPeriodEnd: Date;
+  cancelAtPeriodEnd: boolean;
 };
 
 export type BillingState = {
@@ -15,48 +21,56 @@ export type BillingState = {
   subscription: SubscriptionRow | null;
 };
 
-export async function getBillingState(
-  supabase: SupabaseClient,
-  userId: string,
-): Promise<BillingState> {
-  const [{ data: sub }, { data: customer }] = await Promise.all([
-    supabase
-      .from("subscriptions")
-      .select("id, status, price_id, current_period_end, cancel_at_period_end")
-      .eq("user_id", userId)
-      .order("current_period_end", { ascending: false })
+export async function getBillingState(userId: string): Promise<BillingState> {
+  const [sub, customer] = await Promise.all([
+    db
+      .select({
+        id: subscriptions.id,
+        status: subscriptions.status,
+        priceId: subscriptions.priceId,
+        currentPeriodEnd: subscriptions.currentPeriodEnd,
+        cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId))
+      .orderBy(desc(subscriptions.currentPeriodEnd))
       .limit(1)
-      .maybeSingle<SubscriptionRow>(),
-    supabase
-      .from("stripe_customers")
-      .select("stripe_customer_id")
-      .eq("user_id", userId)
-      .maybeSingle<{ stripe_customer_id: string }>(),
+      .then((rows) => rows[0] ?? null),
+
+    db
+      .select({ stripeCustomerId: stripeCustomers.stripeCustomerId })
+      .from(stripeCustomers)
+      .where(eq(stripeCustomers.userId, userId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
   ]);
 
   const isPro =
     !!sub &&
     ACTIVE_STATUSES.has(sub.status) &&
-    new Date(sub.current_period_end) > new Date();
+    sub.currentPeriodEnd > new Date();
 
   return {
     isPro,
-    stripeCustomerId: customer?.stripe_customer_id ?? null,
+    stripeCustomerId: customer?.stripeCustomerId ?? null,
     subscription: sub ?? null,
   };
 }
 
-export async function getCompletedTodayUTC(
-  supabase: SupabaseClient,
-  userId: string,
-): Promise<number> {
+export async function getCompletedTodayUTC(userId: string): Promise<number> {
   const start = new Date();
   start.setUTCHours(0, 0, 0, 0);
-  const { count } = await supabase
-    .from("qualifications")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("status", "completed")
-    .gte("created_at", start.toISOString());
-  return count ?? 0;
+
+  const [row] = await db
+    .select({ value: count() })
+    .from(qualifications)
+    .where(
+      and(
+        eq(qualifications.userId, userId),
+        eq(qualifications.status, "completed"),
+        gte(qualifications.createdAt, start),
+      ),
+    );
+
+  return row?.value ?? 0;
 }

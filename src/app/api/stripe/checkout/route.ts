@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { eq } from "drizzle-orm";
 import { stripe, STRIPE_PRICE_ID } from "@/lib/stripe";
-import { supabaseServer } from "@/lib/supabase/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { auth } from "@/auth";
+import { db } from "@/lib/db";
+import { stripeCustomers } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 
@@ -13,33 +15,29 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const supabase = await supabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userId = session.user.id;
+  const userEmail = session.user.email ?? undefined;
 
-  const admin = supabaseAdmin();
+  const [existing] = await db
+    .select({ stripeCustomerId: stripeCustomers.stripeCustomerId })
+    .from(stripeCustomers)
+    .where(eq(stripeCustomers.userId, userId))
+    .limit(1);
 
-  const { data: existing } = await admin
-    .from("stripe_customers")
-    .select("stripe_customer_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  let customerId = existing?.stripe_customer_id ?? null;
+  let customerId = existing?.stripeCustomerId ?? null;
   if (!customerId) {
     const customer = await stripe().customers.create({
-      email: user.email ?? undefined,
-      metadata: { user_id: user.id },
+      email: userEmail,
+      metadata: { user_id: userId },
     });
     customerId = customer.id;
-    const { error: insertError } = await admin
-      .from("stripe_customers")
-      .insert({ user_id: user.id, stripe_customer_id: customerId });
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
-    }
+    await db
+      .insert(stripeCustomers)
+      .values({ userId, stripeCustomerId: customerId });
   }
 
   const origin =
@@ -47,20 +45,20 @@ export async function POST(req: NextRequest) {
     process.env.NEXT_PUBLIC_SITE_URL ??
     new URL(req.url).origin;
 
-  const session = await stripe().checkout.sessions.create({
+  const checkoutSession = await stripe().checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
     line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
     success_url: `${origin}/billing?upgraded=1`,
     cancel_url: `${origin}/billing`,
-    client_reference_id: user.id,
-    metadata: { user_id: user.id },
-    subscription_data: { metadata: { user_id: user.id } },
+    client_reference_id: userId,
+    metadata: { user_id: userId },
+    subscription_data: { metadata: { user_id: userId } },
     allow_promotion_codes: true,
   });
 
-  if (!session.url) {
+  if (!checkoutSession.url) {
     return NextResponse.json({ error: "Stripe returned no checkout URL." }, { status: 500 });
   }
-  return NextResponse.json({ url: session.url });
+  return NextResponse.json({ url: checkoutSession.url });
 }

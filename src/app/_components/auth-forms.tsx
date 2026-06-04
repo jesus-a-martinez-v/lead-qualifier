@@ -3,8 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { supabaseBrowser } from "@/lib/supabase/client";
+import { signIn } from "next-auth/react";
 import { safeRedirectPath } from "@/lib/redirect";
+import { signupAction } from "@/app/actions/auth";
 
 type Mode = "login" | "signup";
 
@@ -16,24 +17,21 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
-    setInfo(null);
 
     startTransition(async () => {
-      const supabase = supabaseBrowser();
-
       if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({
+        const res = await signIn("credentials", {
           email,
           password,
+          redirect: false,
         });
-        if (error) {
-          setError(error.message);
+        if (res?.error) {
+          setError("Invalid email or password.");
           return;
         }
         router.replace(redirectTo);
@@ -41,25 +39,12 @@ export function AuthForm({ mode }: { mode: Mode }) {
         return;
       }
 
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
-        },
-      });
-      if (error) {
-        setError(error.message);
-        return;
+      // Signup — server action handles user creation + auto sign-in + redirect.
+      const result = await signupAction({ email, password, redirectTo });
+      if (result && "error" in result) {
+        setError(result.error);
       }
-      if (data.session) {
-        router.replace(redirectTo);
-        router.refresh();
-        return;
-      }
-      setInfo(
-        "Check your email to confirm your account. The confirmation link will sign you in.",
-      );
+      // On success, signupAction throws NEXT_REDIRECT — nothing more to do here.
     });
   };
 
@@ -131,11 +116,6 @@ export function AuthForm({ mode }: { mode: Mode }) {
           {error && (
             <p className="mt-6 border-l-2 border-[color:var(--ember)] pl-4 text-sm text-[color:var(--ember)]">
               {error}
-            </p>
-          )}
-          {info && (
-            <p className="mt-6 border-l-2 border-[color:var(--ink)] pl-4 text-sm text-[color:var(--muted)]">
-              {info}
             </p>
           )}
         </form>

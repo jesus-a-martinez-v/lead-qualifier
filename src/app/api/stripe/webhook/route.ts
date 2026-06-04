@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
+import { eq } from "drizzle-orm";
 import { stripe } from "@/lib/stripe";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { db } from "@/lib/db";
+import { stripeCustomers, subscriptions } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +17,7 @@ export async function POST(req: Request) {
   const sig = req.headers.get("stripe-signature");
   if (!sig) return new NextResponse("Missing stripe-signature header", { status: 400 });
 
+  // Raw body required for signature verification — must not parse as JSON.
   const body = await req.text();
   let event: Stripe.Event;
   try {
@@ -23,8 +26,6 @@ export async function POST(req: Request) {
     const msg = e instanceof Error ? e.message : String(e);
     return new NextResponse(`Bad signature: ${msg}`, { status: 400 });
   }
-
-  const admin = supabaseAdmin();
 
   try {
     switch (event.type) {
@@ -40,15 +41,16 @@ export async function POST(req: Request) {
 
         if (!userId || !customerId || !subId) break;
 
-        await admin
-          .from("stripe_customers")
-          .upsert(
-            { user_id: userId, stripe_customer_id: customerId },
-            { onConflict: "user_id" },
-          );
+        await db
+          .insert(stripeCustomers)
+          .values({ userId, stripeCustomerId: customerId })
+          .onConflictDoUpdate({
+            target: stripeCustomers.userId,
+            set: { stripeCustomerId: customerId },
+          });
 
         const sub = await stripe().subscriptions.retrieve(subId);
-        await upsertSubscription(admin, userId, sub);
+        await upsertSubscription(userId, sub);
         break;
       }
 
@@ -59,19 +61,19 @@ export async function POST(req: Request) {
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
 
         const userId =
-          sub.metadata?.user_id ??
-          (await lookupUserByCustomerId(admin, customerId));
+          sub.metadata?.user_id ?? (await lookupUserByCustomerId(customerId));
 
         if (!userId) break;
 
-        const { error: custErr } = await admin
-          .from("stripe_customers")
-          .upsert(
-            { user_id: userId, stripe_customer_id: customerId },
-            { onConflict: "user_id" },
-          );
-        if (custErr) throw new Error(`stripe_customers upsert: ${custErr.message}`);
-        await upsertSubscription(admin, userId, sub);
+        await db
+          .insert(stripeCustomers)
+          .values({ userId, stripeCustomerId: customerId })
+          .onConflictDoUpdate({
+            target: stripeCustomers.userId,
+            set: { stripeCustomerId: customerId },
+          });
+
+        await upsertSubscription(userId, sub);
         break;
       }
     }
@@ -83,23 +85,16 @@ export async function POST(req: Request) {
   return new NextResponse("ok");
 }
 
-async function lookupUserByCustomerId(
-  admin: ReturnType<typeof supabaseAdmin>,
-  customerId: string,
-): Promise<string | null> {
-  const { data } = await admin
-    .from("stripe_customers")
-    .select("user_id")
-    .eq("stripe_customer_id", customerId)
-    .maybeSingle();
-  return data?.user_id ?? null;
+async function lookupUserByCustomerId(customerId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ userId: stripeCustomers.userId })
+    .from(stripeCustomers)
+    .where(eq(stripeCustomers.stripeCustomerId, customerId))
+    .limit(1);
+  return row?.userId ?? null;
 }
 
-async function upsertSubscription(
-  admin: ReturnType<typeof supabaseAdmin>,
-  userId: string,
-  sub: Stripe.Subscription,
-) {
+async function upsertSubscription(userId: string, sub: Stripe.Subscription) {
   const item = sub.items.data[0];
   const priceId = item?.price?.id ?? null;
   if (!priceId) throw new Error(`Subscription ${sub.id} has no price`);
@@ -110,19 +105,30 @@ async function upsertSubscription(
     throw new Error(`Subscription ${sub.id} has no current_period bounds`);
   }
 
-  const { error } = await admin.from("subscriptions").upsert(
-    {
+  await db
+    .insert(subscriptions)
+    .values({
       id: sub.id,
-      user_id: userId,
+      userId,
       status: sub.status,
-      price_id: priceId,
-      current_period_start: new Date(periodStart * 1000).toISOString(),
-      current_period_end: new Date(periodEnd * 1000).toISOString(),
-      cancel_at_period_end: sub.cancel_at_period_end ?? false,
-      canceled_at: sub.canceled_at ? new Date(sub.canceled_at * 1000).toISOString() : null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "id" },
-  );
-  if (error) throw new Error(`Failed to upsert subscription ${sub.id}: ${error.message}`);
+      priceId,
+      currentPeriodStart: new Date(periodStart * 1000),
+      currentPeriodEnd: new Date(periodEnd * 1000),
+      cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
+      canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: subscriptions.id,
+      set: {
+        userId,
+        status: sub.status,
+        priceId,
+        currentPeriodStart: new Date(periodStart * 1000),
+        currentPeriodEnd: new Date(periodEnd * 1000),
+        cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
+        canceledAt: sub.canceled_at ? new Date(sub.canceled_at * 1000) : null,
+        updatedAt: new Date(),
+      },
+    });
 }

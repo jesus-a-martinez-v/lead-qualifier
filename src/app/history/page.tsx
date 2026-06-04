@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase/server";
+import { desc, eq } from "drizzle-orm";
+import { auth } from "@/auth";
+import { db } from "@/lib/db";
+import { qualifications } from "@/lib/db/schema";
 import type { LeadInput, QualificationResult } from "@/types/lead";
 
 export const metadata = { title: "History — Lead Qualifier" };
@@ -39,18 +42,41 @@ const ACTION_LABEL: Record<
 };
 
 export default async function HistoryPage() {
-  const supabase = await supabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login?redirectTo=/history");
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login?redirectTo=/history");
 
-  const { data, error } = await supabase
-    .from("qualifications")
-    .select("id, run_id, status, lead_input, result, error, created_at")
-    .order("created_at", { ascending: false });
+  let rows: Row[] = [];
+  let fetchError: string | null = null;
 
-  const rows = (data ?? []) as Row[];
+  try {
+    const dbRows = await db
+      .select({
+        id: qualifications.id,
+        runId: qualifications.runId,
+        status: qualifications.status,
+        leadInput: qualifications.leadInput,
+        result: qualifications.result,
+        error: qualifications.error,
+        createdAt: qualifications.createdAt,
+      })
+      .from(qualifications)
+      // Per-user filter — required now that RLS is gone. Without this every
+      // user would see every row. This is the #1 correctness gate.
+      .where(eq(qualifications.userId, session.user.id))
+      .orderBy(desc(qualifications.createdAt));
+
+    rows = dbRows.map((r) => ({
+      id: r.id,
+      run_id: r.runId,
+      status: r.status as Row["status"],
+      lead_input: r.leadInput as LeadInput,
+      result: r.result as QualificationResult | null,
+      error: r.error,
+      created_at: r.createdAt.toISOString(),
+    }));
+  } catch (e) {
+    fetchError = e instanceof Error ? e.message : String(e);
+  }
 
   return (
     <main className="relative z-10 mx-auto max-w-[68rem] px-6 pb-32 pt-12 sm:px-10 sm:pt-16 lg:px-16">
@@ -65,21 +91,21 @@ export default async function HistoryPage() {
         </div>
         <div className="col-span-12 mt-6 md:col-span-3 md:mt-0">
           <p className="text-sm leading-relaxed text-[color:var(--muted)]">
-            Most recent first. Only your own qualifications are visible — row-level
-            security takes care of that.
+            Most recent first. Only your own qualifications are visible —
+            scoped to your account.
           </p>
         </div>
       </section>
 
       <hr className="mb-12 border-0 border-t border-[color:var(--rule)]" />
 
-      {error && (
+      {fetchError && (
         <p className="mb-12 border-l-2 border-[color:var(--ember)] pl-4 text-sm text-[color:var(--ember)]">
-          {error.message}
+          {fetchError}
         </p>
       )}
 
-      {rows.length === 0 && (
+      {rows.length === 0 && !fetchError && (
         <div className="py-24 text-center">
           <p className="text-[color:var(--muted)]">
             No qualifications yet.{" "}

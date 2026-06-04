@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
-import { supabaseServer } from "@/lib/supabase/server";
+import { auth } from "@/auth";
 import { getBillingState, getCompletedTodayUTC } from "@/lib/billing/state";
 import { FREE_DAILY_LIMIT, PRO_PRICE_USD } from "@/lib/billing/plans";
 import { UpgradeButton, ManageButton } from "./_components/billing-buttons";
 
 type SearchParams = Promise<{ upgraded?: string }>;
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
+function formatDate(date: Date): string {
+  return date.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -21,15 +21,12 @@ export default async function BillingPage({
 }) {
   const { upgraded } = await searchParams;
 
-  const supabase = await supabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login?redirectTo=/billing");
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login?redirectTo=/billing");
 
   const [{ isPro, subscription }, used] = await Promise.all([
-    getBillingState(supabase, user.id),
-    getCompletedTodayUTC(supabase, user.id),
+    getBillingState(session.user.id),
+    getCompletedTodayUTC(session.user.id),
   ]);
 
   return (
@@ -98,8 +95,8 @@ export default async function BillingPage({
           <div className="mt-8">
             {isPro && subscription ? (
               <ProDetails
-                periodEnd={subscription.current_period_end}
-                cancelAtPeriodEnd={subscription.cancel_at_period_end}
+                periodEnd={subscription.currentPeriodEnd}
+                cancelAtPeriodEnd={subscription.cancelAtPeriodEnd}
               />
             ) : (
               <UpgradeButton label={`Upgrade — $${PRO_PRICE_USD} / mo`} />
@@ -120,7 +117,7 @@ function ProDetails({
   periodEnd,
   cancelAtPeriodEnd,
 }: {
-  periodEnd: string;
+  periodEnd: Date;
   cancelAtPeriodEnd: boolean;
 }) {
   return (

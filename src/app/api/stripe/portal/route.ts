@@ -1,23 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { eq } from "drizzle-orm";
 import { stripe } from "@/lib/stripe";
-import { supabaseServer } from "@/lib/supabase/server";
+import { auth } from "@/auth";
+import { db } from "@/lib/db";
+import { stripeCustomers } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const supabase = await supabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-  const { data: customer } = await supabase
-    .from("stripe_customers")
-    .select("stripe_customer_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const [customer] = await db
+    .select({ stripeCustomerId: stripeCustomers.stripeCustomerId })
+    .from(stripeCustomers)
+    .where(eq(stripeCustomers.userId, session.user.id))
+    .limit(1);
 
-  if (!customer?.stripe_customer_id) {
+  if (!customer?.stripeCustomerId) {
     return NextResponse.json(
       { error: "No Stripe customer for this account. Upgrade first." },
       { status: 400 },
@@ -29,10 +31,10 @@ export async function POST(req: NextRequest) {
     process.env.NEXT_PUBLIC_SITE_URL ??
     new URL(req.url).origin;
 
-  const session = await stripe().billingPortal.sessions.create({
-    customer: customer.stripe_customer_id,
+  const portalSession = await stripe().billingPortal.sessions.create({
+    customer: customer.stripeCustomerId,
     return_url: `${origin}/billing`,
   });
 
-  return NextResponse.json({ url: session.url });
+  return NextResponse.json({ url: portalSession.url });
 }

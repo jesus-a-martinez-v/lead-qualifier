@@ -1,13 +1,9 @@
 import Link from "next/link";
-import { supabaseServer } from "@/lib/supabase/server";
+import { auth } from "@/auth";
 
 export async function AuthHeader() {
-  const supabase = await supabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return null;
+  const session = await auth();
+  if (!session?.user) return null;
 
   return (
     <div className="border-b border-[color:var(--rule)]">
@@ -34,7 +30,7 @@ export async function AuthHeader() {
         </nav>
         <div className="flex items-center gap-4">
           <span className="hidden text-[color:var(--muted)] sm:inline">
-            {user.email}
+            {session.user.email}
           </span>
           <form action="/logout" method="post">
             <button

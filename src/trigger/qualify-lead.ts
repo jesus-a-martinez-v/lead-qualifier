@@ -1,6 +1,8 @@
 import { logger, metadata, task } from "@trigger.dev/sdk/v3";
+import { and, eq } from "drizzle-orm";
 import { DEFAULT_MODEL, openrouter } from "../lib/openrouter.js";
-import { supabaseAdmin } from "../lib/supabase/admin.js";
+import { db } from "../lib/db/worker.js";
+import { qualifications } from "../lib/db/schema.js";
 import {
   type LeadInput,
   type QualificationResult,
@@ -147,14 +149,17 @@ async function finalize(
 ): Promise<void> {
   if (!qualificationId || !userId) return;
   try {
-    const { error } = await supabaseAdmin()
-      .from("qualifications")
-      .update({ ...patch, run_id: runId })
-      .eq("id", qualificationId)
-      .eq("user_id", userId);
-    if (error) logger.error("supabase update failed", { qualificationId, error: error.message });
+    await db
+      .update(qualifications)
+      .set({ ...patch, runId })
+      .where(
+        and(
+          eq(qualifications.id, qualificationId),
+          eq(qualifications.userId, userId),
+        ),
+      );
   } catch (e) {
-    logger.error("supabase update threw", { qualificationId, error: errMessage(e) });
+    logger.error("drizzle update threw", { qualificationId, error: errMessage(e) });
   }
 }
 
