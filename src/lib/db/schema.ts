@@ -72,7 +72,7 @@ export const verificationTokens = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// App tables — DB column names kept snake_case to match the existing Supabase
+// App tables — DB column names kept snake_case to match the original migration
 // schema EXACTLY. FKs repointed from auth.users(id) → public.users(id).
 // TS property names are camelCase (consumed by DAT-49 onward).
 // ---------------------------------------------------------------------------
